@@ -13,6 +13,10 @@
       <button type="button" class="btn btn-primary" @click="login">
         Login
       </button>
+
+      <button type="button" class="btn btn-primary" @click="Quit()">
+        Exit
+      </button>
     </div>
   </template>
 </template>
@@ -22,6 +26,7 @@ import { ref } from 'vue';
 import { RouterView } from 'vue-router';
 import Sidebar from '@/components/Sidebar.vue';
 import { Connect, MessageType, Send } from '@/store/Client';
+import { Quit } from '@wails/runtime';
 
 const isConnected = ref(false);
 const userName = ref(localStorage.getItem('username') || '');

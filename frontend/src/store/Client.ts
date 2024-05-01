@@ -1,7 +1,9 @@
 import { AddChatMessage } from '@/store/RoomChat';
 
 let ws: WebSocket | null, connectPromise: PromiseResolver | null;
-let userId: number = -1;
+export let userId: number = -1;
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 export const users: Record<number, string> = {};
 
 export enum MessageType {
@@ -21,6 +23,7 @@ export function Connect() {
   connectPromise = Promise.withResolvers();
 
   ws = new WebSocket('ws://localhost:8080');
+  ws.binaryType = 'arraybuffer';
   ws.addEventListener('open', onOpen);
   ws.addEventListener('error', onError);
   ws.addEventListener('ping', onPing);
@@ -35,11 +38,18 @@ export function Send(type: MessageType, data?: any) {
     return false;
   }
 
+  const payload = data ? JSON.stringify(data) : null;
+  const buffer = new ArrayBuffer(1 + (payload?.length ?? 0));
+  const view = new DataView(buffer);
+  view.setInt8(0, type);
+
+  if (payload) {
+    textEncoder.encodeInto(payload, new Uint8Array(buffer, 1));
+  }
+
   console.log('[Client] [Send]', type, data);
-  ws.send(JSON.stringify({
-    type,
-    data,
-  }));
+  ws.send(buffer);
+
   return true;
 }
 
@@ -59,82 +69,43 @@ function onPing() {
   console.log('[Client]', '[onPing]]');
 }
 
-function onMessage(msg: MessageEvent) {
-  const data = JSON.parse(msg.data);
+function onMessage(msg: MessageEvent<ArrayBuffer>) {
+  const view = new DataView(msg.data);
+  const msgType = view.getInt8(0);
+  const payload = JSON.parse(textDecoder.decode(msg.data.slice(1)));
 
-  console.log(data);
-  return;
+  console.log('[Client]', '[Message]', msgType, '->', payload);
 
-  switch (data.type) {
-    case MessageType.Welcome: {
-      const packet = unmarshalWelcome(msg.data);
-      console.debug('[Client] [Welcome]', packet);
+  switch (msgType) {
+    case MessageType.Welcome:
+      userId = payload.id;
 
-      userId = packet.userId;
+      for (const id in payload.users) {
+        users[+id] = payload.users[id];
+      }
       break;
-    }
-    case MessageType.UserConnected: {
-      const packet = unmarshalUserConnected(msg.data);
-      console.debug('[Client] [User Connected]:', packet);
 
-      users[packet.userId] = packet.userName;
+    case MessageType.UserConnected:
+      users[payload.id] = payload.name;
       break;
-    }
-    case MessageType.UserDisconnected: {
-      const packet = unmarshalUserDisconnected(msg.data);
-      console.debug('[Client] [User Disconnected]:', packet);
-      break;
-    }
-    case MessageType.ChatMessage: {
-      const packet = unmarshalChatMessage(msg.data);
-      console.debug('[Client] [Chat Message]:', packet);
 
-      const sender = users[packet.userId];
-      if (sender) AddChatMessage(sender, packet.message);
+    case MessageType.UserDisconnected:
+      delete users[payload.id];
       break;
-    }
-    case MessageType.StreamRoomsConnect: {
-      const packet = unmarshalStreamRoomsConnect(msg.data);
-      console.debug('[Client] [Stream Rooms Connect]:', packet);
+
+    case MessageType.ChatMessage:
+      const sender = users[payload.sender];
+      if (sender) {
+        AddChatMessage(sender, payload.message);
+      }
+
       break;
-    }
+
+    case MessageType.StreamRoomsConnect:
+      break;
+
     default:
-      console.warn('[Client]', '[Unknown Message]', msg.data);
+      console.warn('[Client]', '[On Message]', 'Unhandled message:', msgType, '->', payload);
+      break;
   }
-}
-
-function unmarshalWelcome(payload: string) {
-  return {
-    type: MessageType.Welcome,
-    userId: +payload.substring(8, 16),
-  };
-}
-
-function unmarshalUserConnected(payload: string) {
-  return {
-    type: MessageType.UserConnected,
-    userId: +payload.substring(8, 16),
-    userName: payload.substring(16),
-  };
-}
-
-function unmarshalUserDisconnected(payload: string) {
-  return {
-    type: MessageType.UserDisconnected,
-    userId: +payload.substring(8, 16),
-  };
-}
-
-function unmarshalChatMessage(payload: string) {
-  return {
-    type: MessageType.ChatMessage,
-    userId: +payload.substring(8, 16),
-    message: payload.substring(16),
-  };
-}
-
-function unmarshalStreamRoomsConnect(payload: string) {
-  return {
-    type: MessageType.StreamRoomsConnect,
-  };
 }

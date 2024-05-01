@@ -53,7 +53,7 @@
 import { nextTick, ref, watch } from 'vue';
 import { activeRoom } from '@/store/Rooms';
 import { AddChatMessage, type FormattedMessage, messages, users } from '@/store/RoomChat';
-import { MessageType, Send } from '@/store/Client';
+import { MessageType, Send, userId } from '@/store/Client';
 
 const el = ref<HTMLElement>();
 watch(activeRoom, () => scrollMessageContainerDown('instant'));
@@ -74,11 +74,12 @@ function sendMessage(e: KeyboardEvent | MouseEvent) {
   }
 
   const ok = Send(MessageType.ChatMessage, {
+    sender: userId,
     message: message.value,
   });
 
   if (ok) {
-    AddChatMessage('Tecno', message.value);
+    AddChatMessage(localStorage.getItem('username')!, message.value);
 
     message.value = '';
     messageRows.value = 1;
